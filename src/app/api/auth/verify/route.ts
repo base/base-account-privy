@@ -3,9 +3,9 @@ import { createPublicClient, http } from 'viem';
 import { base } from 'viem/chains';
 import { nonceStore } from '@/lib/nonce-store';
 
-const client = createPublicClient({ 
-  chain: base, 
-  transport: http() 
+const client = createPublicClient({
+  chain: base,
+  transport: http()
 });
 
 export async function POST(request: NextRequest) {
@@ -20,34 +20,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 1. Extract and check nonce hasn't been reused
-    // SIWE messages can have different formats, try multiple patterns
-    let nonce: string | undefined;
-    
-    // Try different nonce patterns
-    const patterns = [
-      /Nonce: (\w+)/,           // "Nonce: abc123"
-      /nonce: (\w+)/i,          // "nonce: abc123" (case insensitive)
-      /at (\w{32})$/,           // "at abc123" (end of message)
-      /(\w{32})/                // Any 32-character hex string
-    ];
-
-    for (const pattern of patterns) {
-      const match = message.match(pattern);
-      if (match) {
-        nonce = match[1];
-        break;
-      }
-    }
+    // 1. Extract and validate nonce from SIWE message
+    const nonce = extractNonce(message);
 
     if (!nonce) {
       return NextResponse.json(
-        { error: 'Invalid message format - nonce not found' },
+        {
+          error: 'Invalid message format',
+          details: 'Nonce not found in SIWE message. Expected format: "Nonce: <hex_string>"'
+        },
         { status: 400 }
       );
     }
 
-    // Check if nonce exists and consume it (prevents reuse)
+    if (!validateNonce(nonce)) {
+      return NextResponse.json(
+        {
+          error: 'Invalid nonce format',
+          details: 'Nonce must be a hexadecimal string with at least 8 characters'
+        },
+        { status: 400 }
+      );
+    }
+
     if (!nonceStore.consume(nonce)) {
       return NextResponse.json(
         { error: 'Invalid or reused nonce' },
@@ -56,10 +51,10 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Verify the signature using viem (handles ERC-6492 for undeployed wallets)
-    const valid = await client.verifyMessage({ 
-      address: address as `0x${string}`, 
-      message, 
-      signature: signature as `0x${string}` 
+    const valid = await client.verifyMessage({
+      address: address as `0x${string}`,
+      message,
+      signature: signature as `0x${string}`
     });
 
     if (!valid) {
@@ -71,8 +66,8 @@ export async function POST(request: NextRequest) {
 
     // 3. Authentication successful - create session/JWT here
     // For now, just return success with user info
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       address,
       message: 'Authentication successful',
       timestamp: new Date().toISOString()
@@ -85,4 +80,28 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+// Extract and validate nonce from SIWE message
+function extractNonce(message: string): string | null {
+  const noncePatterns = [
+    { pattern: /Nonce:\s*([a-fA-F0-9]+)/, description: "Standard Nonce format" },
+    { pattern: /nonce:\s*([a-fA-F0-9]+)/i, description: "Case-insensitive nonce" },
+    { pattern: /at\s+([a-fA-F0-9]{32,64})$/, description: "End-of-message nonce" }
+  ];
+
+  for (const { pattern, description } of noncePatterns) {
+    const match = message.match(pattern);
+    if (match?.[1]) {
+      console.log(`Found nonce using: ${description}`);
+      return match[1];
+    }
+  }
+
+  return null;
+}
+
+function validateNonce(nonce: string): boolean {
+  // Basic nonce validation - adjust based on your nonce generation strategy
+  return nonce.length >= 8 && /^[a-fA-F0-9]+$/.test(nonce);
 }

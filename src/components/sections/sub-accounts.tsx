@@ -30,7 +30,7 @@ const SubAccounts = () => {
 
     setIsLoading(true);
     try {
-      // Switch to Base Sepolia (or Base Mainnet - use 8453 for mainnet)
+      // Switch to Base Mainnet
       await baseAccount.switchChain(8453);
       const provider = await baseAccount.getEthereumProvider();
 
@@ -70,7 +70,7 @@ const SubAccounts = () => {
 
     setIsLoading(true);
     try {
-      // Switch to Base Sepolia (or Base Mainnet - use 8453 for mainnet)
+      // Switch to Base Mainnet
       await baseAccount.switchChain(8453);
       const provider = await baseAccount.getEthereumProvider();
       console.log(baseAccount.address);

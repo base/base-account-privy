@@ -26,10 +26,10 @@ export async function POST(request: NextRequest) {
     
     // Try different nonce patterns
     const patterns = [
-      /Nonce: (\w+)/,           // "Nonce: abc123"
-      /nonce: (\w+)/i,          // "nonce: abc123" (case insensitive)
-      /at (\w{32})$/,           // "at abc123" (end of message)
-      /(\w{32})/                // Any 32-character hex string
+      /Nonce: ([a-zA-Z0-9]+)/,           // "Nonce: abc123"
+      /nonce: ([a-zA-Z0-9]+)/i,          // "nonce: abc123" (case insensitive)
+      /at ([a-zA-Z0-9]{32})$/,           // "at abc123" (end of message)
+      /([a-zA-Z0-9]{32})/                // Any 32-character hex string
     ];
 
     for (const pattern of patterns) {

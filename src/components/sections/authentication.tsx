@@ -39,7 +39,7 @@ const Authentication = () => {
             capabilities: {
               signInWithEthereum: {
                 nonce,
-                chainId: "0x2105",
+                chainId: 8453,
               },
             },
           },

@@ -20,25 +20,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 1. Extract and check nonce hasn't been reused
-    // SIWE messages can have different formats, try multiple patterns
-    let nonce: string | undefined;
-    
-    // Try different nonce patterns
-    const patterns = [
-      /Nonce: (\w+)/,           // "Nonce: abc123"
-      /nonce: (\w+)/i,          // "nonce: abc123" (case insensitive)
-      /at (\w{32})$/,           // "at abc123" (end of message)
-      /(\w{32})/                // Any 32-character hex string
-    ];
-
-    for (const pattern of patterns) {
-      const match = message.match(pattern);
-      if (match) {
-        nonce = match[1];
-        break;
-      }
-    }
+    // Extract the 32-character hexadecimal nonce from the canonical SIWE field.
+    const nonceMatch = message.match(/(?:^|\r?\n)Nonce: ([0-9a-fA-F]{32})(?:\r?\n|$)/);
+    const nonce = nonceMatch?.[1];
 
     if (!nonce) {
       return NextResponse.json(
@@ -47,15 +31,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if nonce exists and consume it (prevents reuse)
-    if (!nonceStore.consume(nonce)) {
-      return NextResponse.json(
-        { error: 'Invalid or reused nonce' },
-        { status: 400 }
-      );
-    }
+    // Verify the signature before consuming the nonce so invalid requests cannot burn it.
+    // viem also handles ERC-6492 signatures for undeployed wallets.
 
-    // 2. Verify the signature using viem (handles ERC-6492 for undeployed wallets)
     const valid = await client.verifyMessage({ 
       address: address as `0x${string}`, 
       message, 
@@ -69,7 +47,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 3. Authentication successful - create session/JWT here
+    // Consume the nonce only after signature verification succeeds.
+    if (!nonceStore.consume(nonce)) {
+      return NextResponse.json(
+        { error: 'Invalid or reused nonce' },
+        { status: 400 }
+      );
+    }
+
+    // Authentication successful - create session/JWT here
+
     // For now, just return success with user info
     return NextResponse.json({ 
       success: true, 

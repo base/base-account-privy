@@ -1,27 +1,49 @@
-// Simple in-memory nonce store
-// In production, use Redis or a database for persistence across server restarts
+const NONCE_TTL_MS = 10 * 60 * 1000;
+
+interface StoredNonce {
+  expiresAt: number;
+}
+
 class NonceStore {
-  private nonces = new Set<string>();
+  private nonces = new Map<string, StoredNonce>();
   private cleanupInterval: NodeJS.Timeout;
 
   constructor() {
-    // Clean up old nonces every 10 minutes to prevent memory leaks
+    // Remove expired entries periodically without extending their individual lifetimes.
     this.cleanupInterval = setInterval(() => {
-      this.nonces.clear();
-    }, 10 * 60 * 1000);
+      this.removeExpired();
+    }, NONCE_TTL_MS);
+    this.cleanupInterval.unref?.();
   }
 
   add(nonce: string): void {
-    this.nonces.add(nonce);
+    this.removeExpired();
+    this.nonces.set(nonce, { expiresAt: Date.now() + NONCE_TTL_MS });
   }
 
-  // Returns true if nonce existed and was deleted, false if it didn't exist
+  // Consume a nonce only while it is present and unexpired.
   consume(nonce: string): boolean {
-    return this.nonces.delete(nonce);
+    const storedNonce = this.nonces.get(nonce);
+    if (!storedNonce) {
+      return false;
+    }
+
+    this.nonces.delete(nonce);
+    return storedNonce.expiresAt > Date.now();
   }
 
   has(nonce: string): boolean {
-    return this.nonces.has(nonce);
+    const storedNonce = this.nonces.get(nonce);
+    if (!storedNonce) {
+      return false;
+    }
+
+    if (storedNonce.expiresAt <= Date.now()) {
+      this.nonces.delete(nonce);
+      return false;
+    }
+
+    return true;
   }
 
   clear(): void {
@@ -29,6 +51,7 @@ class NonceStore {
   }
 
   size(): number {
+    this.removeExpired();
     return this.nonces.size;
   }
 
@@ -36,7 +59,16 @@ class NonceStore {
     clearInterval(this.cleanupInterval);
     this.nonces.clear();
   }
+
+  private removeExpired(): void {
+    const now = Date.now();
+    for (const [nonce, storedNonce] of this.nonces) {
+      if (storedNonce.expiresAt <= now) {
+        this.nonces.delete(nonce);
+      }
+    }
+  }
 }
 
-// Export a singleton instance
+// This store is process-local; production deployments must use shared durable storage for multi-instance replay protection.
 export const nonceStore = new NonceStore();
